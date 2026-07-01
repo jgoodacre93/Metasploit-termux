@@ -159,14 +159,59 @@ update_tool() {
     cd "$INSTALL_DIR" && bash metasploit.sh
 }
 
+check_for_updates() {
+    # Check if INSTALL_DIR is a Git repo
+    if [ ! -d "$INSTALL_DIR/.git" ]; then
+        return
+    fi
+
+    echo -ne "${YELLOW}[...]${RESET} Checking for updates..."
+
+    local FETCH_STATUS
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 3 git -C "$INSTALL_DIR" fetch origin main >/dev/null 2>&1
+        FETCH_STATUS=$?
+    else
+        git -C "$INSTALL_DIR" fetch origin main >/dev/null 2>&1
+        FETCH_STATUS=$?
+    fi
+
+    if [ $FETCH_STATUS -ne 0 ]; then
+        echo -e "\r${YELLOW}[!]${RESET} Update check skipped (offline)"
+        sleep 0.8
+        echo -ne "\r\033[K"
+        return
+    fi
+
+    local LOCAL_COMMIT REMOTE_COMMIT
+    LOCAL_COMMIT=$(git -C "$INSTALL_DIR" rev-parse HEAD 2>/dev/null)
+    REMOTE_COMMIT=$(git -C "$INSTALL_DIR" rev-parse origin/main 2>/dev/null)
+
+    if [ "$LOCAL_COMMIT" != "$REMOTE_COMMIT" ]; then
+        if git -C "$INSTALL_DIR" merge-base --is-ancestor "$LOCAL_COMMIT" "$REMOTE_COMMIT" 2>/dev/null; then
+            echo -e "\r${GREEN}[!]${RESET} A new version of the installer is available!"
+            echo -e "    Local  version: ${YELLOW}${LOCAL_COMMIT:0:7}${RESET}"
+            echo -e "    Latest version: ${GREEN}${REMOTE_COMMIT:0:7}${RESET}"
+            echo ""
+            echo -ne "${CYAN}[?]${RESET} Would you like to update the installer now? (y/N): "
+            read -r auto_update
+            if [[ "$auto_update" =~ ^[yY]$ ]]; then
+                update_tool
+            fi
+            return
+        fi
+    fi
+
+    echo -ne "\r\033[K"
+}
+
 menu() {
     banner
     echo -e "  ${RED}[${RESET}1${RED}]${GREEN} Install Metasploit${RESET}"
     echo -e "  ${RED}[${RESET}2${RED}]${GREEN} Repair${RESET}"
     echo -e "  ${RED}[${RESET}3${RED}]${GREEN} Backup${RESET}"
     echo -e "  ${RED}[${RESET}4${RED}]${GREEN} Restore${RESET}"
-    echo -e "  ${RED}[${RESET}5${RED}]${GREEN} Update Installer${RESET}"
-    echo -e "  ${RED}[${RESET}6${RED}]${GREEN} Exit${RESET}"
+    echo -e "  ${RED}[${RESET}5${RED}]${GREEN} Exit${RESET}"
     echo ""
     echo -ne "${CYAN}Choose Option : ${RESET}"
 
@@ -176,11 +221,11 @@ menu() {
         2) repair_tool ;;
         3) backup_data ;;
         4) restore_data ;;
-        5) update_tool ;;
-        6) echo -e "${GREEN}Exiting...${RESET}"; exit 0 ;;
+        5) echo -e "${GREEN}Exiting...${RESET}"; exit 0 ;;
         *) invalid_input ;;
     esac
 }
 
 # Start the script
+check_for_updates
 menu
